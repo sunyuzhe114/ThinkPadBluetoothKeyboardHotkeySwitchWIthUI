@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+dist/
+artifacts/
+reports/*.png
+reports/*.json
+reports/*.log
+.vs/
+*.user
+*.suo
+docs/superpowers/
