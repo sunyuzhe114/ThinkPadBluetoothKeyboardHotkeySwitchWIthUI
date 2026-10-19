@@ -16,6 +16,11 @@ internal static class Program {
         var list = (ListView)layout.GetControlFromPosition(0, 3)!;
         var actions = (FlowLayoutPanel)layout.GetControlFromPosition(0, 8)!;
         var detail = (Label)layout.GetControlFromPosition(0, 7)!;
+        void CreateHandles(Control parent) {
+            _ = parent.Handle;
+            foreach (Control child in parent.Controls) CreateHandles(child);
+        }
+        CreateHandles(form);
 
         void Arrange(int width, int height, string? error = null) {
             form.ClientSize = new Size(width, height);
@@ -44,6 +49,9 @@ internal static class Program {
         Check(detail.Height >= detail.GetPreferredSize(new Size(detail.Width, 0)).Height, "long status fits its row");
         Check(actions.Top >= detail.Bottom, "long status does not cover actions");
         Check(actions.Bottom <= layout.ClientSize.Height - layout.Padding.Bottom, "long status keeps footer visible");
+        Arrange(1920, 1080);
+        Arrange(570, 605);
+        Check(list.Columns.Cast<ColumnHeader>().Sum(c => c.Width) <= list.ClientSize.Width, "native columns fit after shrinking a large window");
         Console.WriteLine($"{count} Windows layout assertions passed (DPI {form.DeviceDpi})");
     }
 }

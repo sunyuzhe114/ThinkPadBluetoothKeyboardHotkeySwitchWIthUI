@@ -39,11 +39,21 @@ internal sealed class MainForm : Form {
         list.Columns.Add("功能键", 100); list.Columns.Add("对应热键", 360);
         string[] labels = ["静音", "降低音量", "提高音量", "上一曲", "播放 / 暂停", "下一曲", "浏览器后退", "浏览器主页", "菜单", "Shift + Win + F21（兼容）", "Ctrl + Alt + Tab（兼容）"];
         for (int i = 0; i < labels.Length; i++) { var item = new ListViewItem("F" + (i + 1)); item.SubItems.Add(labels[i]); list.Items.Add(item); }
-        list.Resize += (_, _) => {
+        bool columnsQueued = false;
+        void FitColumns() {
             int available = Math.Max(0, list.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 2);
             int first = Math.Min(available, Math.Clamp(available / 5, (int)(90 * DeviceDpi / 96f), (int)(150 * DeviceDpi / 96f)));
             list.Columns[0].Width = first; list.Columns[1].Width = available - first;
-        };
+        }
+        void QueueColumns() {
+            if (columnsQueued || !list.IsHandleCreated || list.IsDisposed) return;
+            columnsQueued = true;
+            // Native list-view sizing and DPI updates can finish after the form's resize event.
+            list.BeginInvoke(() => { columnsQueued = false; if (!list.IsDisposed) FitColumns(); });
+        }
+        list.ClientSizeChanged += (_, _) => QueueColumns();
+        list.HandleCreated += (_, _) => QueueColumns();
+        layout.Layout += (_, _) => QueueColumns();
         layout.Controls.Add(list, 0, 3);
         compatibility.Text = "兼容 F10 / F11 组合键"; compatibility.AutoSize = true; compatibility.Dock = DockStyle.Fill; compatibility.Margin = new Padding(3, 8, 3, 4);
         compatibility.CheckedChanged += (_, _) => { if (!rendering) CompatibilityChanged?.Invoke(compatibility.Checked); };

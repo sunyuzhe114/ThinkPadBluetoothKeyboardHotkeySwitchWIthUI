@@ -146,7 +146,7 @@ Runtime 的较小版本。`--self-test` 只验证 Win32 结构、钩子安装/�
 键盘的 F1 / Fn+F1 / 长按音量 / F10 / F11 检查。
 
 开发结构和复测方法见 [开发与验证说明](docs/DEVELOPMENT.md)。
-版本更新见 [1.0.2 发布说明](docs/releases/v1.0.2.md)。
+版本更新见 [1.0.3 发布说明](docs/releases/v1.0.3.md)。
 
 ## 常见问题
 
