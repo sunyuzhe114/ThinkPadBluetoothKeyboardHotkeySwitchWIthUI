@@ -1,0 +1,70 @@
+name: Publish Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '8.0.x'
+      - name: Validate release version
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw 'Expected a vX.Y.Z tag.' }
+          [xml]$project = Get-Content src/KeyboardSwitcher.csproj
+          if ('v' + $project.Project.PropertyGroup.Version -ne $tag) { throw 'Tag and project version differ.' }
+          if (-not (Test-Path -LiteralPath "docs/releases/$tag.md")) { throw 'Release notes are missing.' }
+      - name: Run tests and publish self-contained EXE
+        run: ./build.ps1
+      - name: Native self-test and checksum
+        run: |
+          $exe = Join-Path $PWD 'dist/ThinkPadKeyboardSwitcher.exe'
+          $test = Start-Process -FilePath $exe -ArgumentList '--self-test reports/native-release.json' -WindowStyle Hidden -Wait -PassThru
+          if ($test.ExitCode -ne 0) { throw "Native self-test exited $($test.ExitCode)." }
+          $result = Get-Content reports/native-release.json -Raw | ConvertFrom-Json
+          if ($result.status -ne 'PASS' -or $result.emittedKeys -ne 0) { throw 'Native self-test failed.' }
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  ThinkPadKeyboardSwitcher.exe" | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+      - name: Upload assets and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GH_PROMPT_DISABLED: '1'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $tag = $env:GITHUB_REF_NAME
+          $title = "ThinkPad Keyboard Switcher $tag"
+          $draft = gh release view $tag --json isDraft --jq .isDraft 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --draft --verify-tag --title $title --notes-file "docs/releases/$tag.md"
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft release.' }
+          } elseif ($draft -ne 'true') {
+            throw 'This release is already published; refusing to replace its assets.'
+          }
+          gh release upload $tag dist/ThinkPadKeyboardSwitcher.exe dist/SHA256SUMS.txt --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed.' }
+          gh release edit $tag --draft=false --latest --title $title --notes-file "docs/releases/$tag.md"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the release.' }

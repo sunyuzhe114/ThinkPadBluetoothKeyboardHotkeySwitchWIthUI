@@ -11,7 +11,13 @@ Windows 可视化托盘程序，参考
 
 ## 快速开始
 
-当前仓库提供源码，不提交 `dist/` 中的编译产物。请在 Windows 上安装
+**直接使用：** [下载最新版 EXE](https://github.com/sunyuzhe114/ThinkPadBluetoothKeyboardHotkeySwitchWIthUI/releases/latest/download/ThinkPadKeyboardSwitcher.exe)，
+或打开 [版本下载页](https://github.com/sunyuzhe114/ThinkPadBluetoothKeyboardHotkeySwitchWIthUI/releases/latest)
+查看更新说明和 `SHA256SUMS.txt` 校验值。放到固定目录后双击运行，无需另装 .NET。
+程序尚未进行数字签名，请确认下载来源并遵守设备的安全策略。
+
+**从源码编译：** 仓库不提交 `dist/` 中的编译产物，可执行文件单独放在 Releases。
+请在 Windows 上安装
 [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)，然后在 PowerShell 中执行：
 
 ```powershell
@@ -39,6 +45,8 @@ SSH 克隆需要 GitHub 认可的 SSH 密钥；也可使用仓库的 HTTPS 地�
 - 右键托盘图标选择模式；双击打开控制窗口。
 - 关闭或最小化控制窗口会收起到托盘；菜单或窗口中的“退出”会彻底退出。
 - Windows 可能把新图标放在任务栏的隐藏图标区，可手动拖到通知区域。
+- 最大化或调整窗口大小时，按键列表和列宽随之调整，提示文字换行，底部按钮保持可见。
+- 最大化后收起到托盘，再次打开会保留最大化状态。
 
 ## 开机自动启动
 
@@ -98,7 +106,9 @@ F10 / F11 的特殊组合键可通过“兼容 F10 / F11 组合键”独立关�
 
 - 独立线程安装 `WH_KEYBOARD_LL`，该线程执行快速事件处理，不做磁盘写入。
 - 使用 `SendInput`，分别处理按下、重复和抬起，切换/退出时释放映射持有的按键。
-- 跳过注入事件，防止自递归；软件模拟键和其他重映射软件可能不参与映射。
+- 跳过程序自身输出的按键，防止自递归。蓝牙消费控制热键有时由 Windows
+  以合成事件传递，1.0.1 起允许这类静音、音量等表内热键参与映射。
+  其他合成按键与低完整性级别的注入仍然跳过。
   不要同时运行原版工具或作用于同组键的重映射程序。
 - 不安装驱动、不修改蓝牙设置、不记录键入文本、不上传数据。
 - 参数文件为 `%LOCALAPPDATA%\ThinkPadKeyboardSwitcher\settings.json`。
@@ -115,13 +125,14 @@ F10 / F11 的特殊组合键可通过“兼容 F10 / F11 组合键”独立关�
 ```powershell
 .\build.ps1
 dotnet run --project tests
+dotnet run --project tests-windows
 $exe = Join-Path $PWD 'dist\ThinkPadKeyboardSwitcher.exe'
 $test = Start-Process -FilePath $exe -ArgumentList '--self-test reports\native-self-test.json' -WindowStyle Hidden -Wait -PassThru
 Get-Content .\reports\native-self-test.json
 $test.ExitCode
 ```
 
-`build.ps1` 先跑纯映射测试，再生成自包含 EXE 到 `dist/`；首次构建会从
+`build.ps1` 先跑映射和 Windows 布局测试，再生成自包含 EXE 到 `dist/`；首次构建会从
 NuGet 下载微软运行时；本机缓存齐全时可用 `.\build.ps1 -Offline` 离线打包。
 `-FrameworkDependent` 可生成依赖本机 .NET 8 Desktop
 Runtime 的较小版本。`--self-test` 只验证 Win32 结构、钩子安装/卸载和图标创建，
@@ -135,6 +146,7 @@ Runtime 的较小版本。`--self-test` 只验证 Win32 结构、钩子安装/�
 键盘的 F1 / Fn+F1 / 长按音量 / F10 / F11 检查。
 
 开发结构和复测方法见 [开发与验证说明](docs/DEVELOPMENT.md)。
+版本更新见 [1.0.2 发布说明](docs/releases/v1.0.2.md)。
 
 ## 常见问题
 
@@ -142,12 +154,23 @@ Runtime 的较小版本。`--self-test` 只验证 Win32 结构、钩子安装/�
 | --- | --- |
 | 启动后没有看到窗口 | 登录启动和 `--tray` 只显示托盘图标；查看任务栏隐藏图标区，双击 F/H/! 图标。 |
 | 有绿色 F 图标但按键没变化 | 图标只表示软件模式，不是硬件反馈。先确认键盘型号、按键实际键值，再尝试“重启监听”；不要同时运行其他重映射工具。 |
+| 旧版中 F1 仍然静音 | 1.0.0 会跳过所有合成事件，部分蓝牙键盘的多媒体键因此漏过映射；请重新编译 1.0.1 或更新版本，并确认退出了旧进程。 |
 | 笔记本内置键盘也被改变了 | 这是全局键盘映射，当前版本不能按物理设备隔离；切换“原始热键”可停用映射。 |
 | Ctrl+Alt+Tab 不再打开原来的界面 | 关闭“兼容 F10 / F11 组合键”，恢复这组快捷键的原始行为。 |
 | 在管理员窗口中失效或显示红色 ! | Windows 输入权限隔离可能阻止输出；程序不会自动提权或关闭 UAC。优先在普通权限窗口使用。 |
 | 勾选了自动启动，但登录后没运行 | 检查 EXE 是否被移动/删除，以及任务管理器“启动应用”是否单独禁用了该项。 |
 | 移动了程序后取消启动项没有生效 | 程序只删除匹配当前 EXE 路径的启动项；先在旧位置取消，或在新位置先启用再取消。 |
 | 构建时下载失败或文件占用 | 检查 NuGet 网络连接；已缓存依赖可用 `-Offline`。文件占用时先在托盘退出旧程序。 |
+
+需要进一步排查 F1 时，可先退出已有实例，再从仓库根目录启动一次限时诊断：
+
+```powershell
+& .\dist\ThinkPadKeyboardSwitcher.exe --diagnose-f1 reports\f1-diagnostic.json
+```
+
+仅记录 F1／静音事件的键值、标记和映射结果，以及运行模式，最多 128 条，
+两分钟后自动停止。不会记录字母、数字或输入的文字；不带该参数的日常运行
+不会生成诊断报告。报告保存在本地，不会上传；再次启动不会给已有实例开启诊断。
 
 ## 卸载
 

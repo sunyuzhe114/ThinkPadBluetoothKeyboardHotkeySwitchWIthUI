@@ -4,6 +4,8 @@ Push-Location $PSScriptRoot
 try {
     dotnet run --project tests -c Release
     if ($LASTEXITCODE) { throw 'Mapping tests failed' }
+    dotnet run --project tests-windows -c Release
+    if ($LASTEXITCODE) { throw 'Windows layout tests failed' }
     $selfContained = if ($FrameworkDependent) { 'false' } else { 'true' }
     $sourceArgs = @()
     if ($Offline) {

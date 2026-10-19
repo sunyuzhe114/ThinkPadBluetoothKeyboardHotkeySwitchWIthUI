@@ -16,7 +16,11 @@ internal static class Program {
             if (args.Contains("--enable-startup")) StartupRegistration.Set(true);
             if (args.Contains("--disable-startup")) StartupRegistration.Set(false);
             if (!first) { if (!args.Contains("--tray")) showEvent.Set(); return 0; }
-            Application.Run(new TrayApplication(showEvent, args.Contains("--tray")));
+            int diagnosticIndex = Array.IndexOf(args, "--diagnose-f1");
+            if (diagnosticIndex >= 0 && diagnosticIndex + 1 >= args.Length)
+                throw new ArgumentException("--diagnose-f1 requires an output JSON path");
+            string? diagnosticPath = diagnosticIndex < 0 ? null : Path.GetFullPath(args[diagnosticIndex + 1]);
+            Application.Run(new TrayApplication(showEvent, args.Contains("--tray"), diagnosticPath));
             return 0;
         } catch (Exception error) {
             MessageBox.Show(error.Message, "ThinkPad 键盘切换器", MessageBoxButtons.OK, MessageBoxIcon.Error);

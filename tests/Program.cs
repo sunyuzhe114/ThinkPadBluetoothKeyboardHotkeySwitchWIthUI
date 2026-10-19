@@ -16,7 +16,7 @@ for (int i = 0; i < media.Length; i++) {
         Check(up.Suppress && up.Output.SequenceEqual(new[] { new Stroke(pair.Item2, false) }), $"pair {i} up {pair.Item1}");
     }
 }
-Check(!engine.Process(new(0xAD, true, true)).Suppress, "injected bypass");
+Check(!engine.Process(new(0x70, true, true)).Suppress, "injected function key bypass");
 Check(!engine.Process(new(0x41, true)).Suppress, "text untouched");
 Check(!engine.Process(new(0x7B, true)).Suppress, "F12 untouched");
 Check(!engine.Process(new(0x09, true)).Suppress, "ordinary Tab untouched");
@@ -44,4 +44,34 @@ Check(f10.Output.SequenceEqual(new[] { new Stroke(0xA0, true), new Stroke(0x5B, 
 Check(engine.ReleaseAll().Count == 3, "shutdown drains chord");
 engine.Configure(true, false);
 Check(!engine.Process(new(0x7A, true)).Suppress, "compatibility can be disabled");
+var injectedMedia = new MappingEngine();
+injectedMedia.Configure(true, true);
+for (int i = 0; i < media.Length; i++) {
+    var down = injectedMedia.Process(new(media[i], true, true));
+    Check(down.Suppress && down.Output.SequenceEqual(new[] { new Stroke(0x70 + i, true) }), $"system media {i} mapped down");
+    var repeat = injectedMedia.Process(new(media[i], true, true));
+    Check(repeat.Suppress && repeat.Output.SequenceEqual(down.Output), $"system media {i} mapped repeat");
+    var up = injectedMedia.Process(new(media[i], false, true));
+    Check(up.Suppress && up.Output.SequenceEqual(new[] { new Stroke(0x70 + i, false) }), $"system media {i} mapped up");
+}
+Check(!injectedMedia.Process(new(0x41, true, true)).Suppress, "injected text remains unchanged");
+foreach (int key in media.Concat(Enumerable.Range(0x70, 12))) {
+    Check(!injectedMedia.Process(new(key, true, true, OwnOutput: true)).Suppress, $"own output {key} never remapped");
+}
+Check(!injectedMedia.Process(new(0xAD, true, true, LowerIntegrity: true)).Suppress, "lower integrity injection ignored");
+var mediaHold = injectedMedia.Process(new(0xAD, true, true));
+Check(mediaHold.Suppress, "system mute hold mapped");
+Check(!injectedMedia.Process(new(0xAD, false, true, OwnOutput: true)).Suppress, "own output does not release foreign hold");
+Check(injectedMedia.Configure(false, true).SequenceEqual(new[] { new Stroke(0x70, false) }), "mode change releases system media hold");
+Check(injectedMedia.Process(new(0xAD, false, true)).Suppress, "system media hold drained after disable");
+injectedMedia.Configure(false, true);
+Check(!injectedMedia.Process(new(0xAD, true, true)).Suppress, "system mute unchanged in original mode");
+var diagnostics = new F1Diagnostics();
+diagnostics.Key(0x41, 0, 0, false, true, "pass");
+Check(diagnostics.EventCount == 0, "diagnostics ignores text keys");
+diagnostics.Key(0xAD, 0, 0, false, true, "pass");
+diagnostics.Key(0x70, 0, 0x10, true, false, "injected-bypass");
+Check(diagnostics.EventCount == 2, "diagnostics includes only F1 and mute");
+for (int i = 0; i < 200; i++) diagnostics.Key(0xAD, 0, 0, false, true, "pass");
+Check(diagnostics.EventCount == 128, "diagnostics bounded to 128 events");
 Console.WriteLine($"{count} assertions passed");

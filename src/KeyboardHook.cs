@@ -12,9 +12,11 @@ internal sealed class KeyboardHook : IDisposable {
     private IntPtr hook;
     private Exception? startError;
     private bool disposed;
+    private readonly F1Diagnostics? diagnostics;
     public event Action<string>? Fault;
 
-    public KeyboardHook() {
+    public KeyboardHook(F1Diagnostics? diagnostics = null) {
+        this.diagnostics = diagnostics;
         callback = Handle;
         thread = new Thread(Loop) { IsBackground = true, Name = "Keyboard hook message loop" };
         thread.SetApartmentState(ApartmentState.STA); thread.Start();
@@ -41,7 +43,9 @@ internal sealed class KeyboardHook : IDisposable {
         if (disposed || dispatcher is null || !thread.IsAlive) return Task.FromException(new InvalidOperationException("键盘监听线程已停止"));
         dispatcher.BeginInvoke(() => {
             try {
-                if (!Native.Emit(engine.Configure(enabled, compatibility))) throw new Win32Exception("无法释放映射按键，可能受到权限或系统限制");
+                bool success = Native.Emit(engine.Configure(enabled, compatibility));
+                diagnostics?.Configure(enabled, compatibility, success);
+                if (!success) throw new Win32Exception("无法释放映射按键，可能受到权限或系统限制");
                 done.SetResult();
             } catch (Exception error) { done.SetException(error); }
         });
@@ -52,13 +56,21 @@ internal sealed class KeyboardHook : IDisposable {
         int type = message.ToInt32();
         if (type is not (0x100 or 0x101 or 0x104 or 0x105)) return Native.CallNextHookEx(hook, code, message, pointer);
         var data = Marshal.PtrToStructure<Native.HookData>(pointer);
-        if ((data.Flags & 0x10) != 0 || data.Extra == Native.Marker) return Native.CallNextHookEx(hook, code, message, pointer);
+        bool down = type is 0x100 or 0x104;
+        var input = new KeyEvent((int)data.Key, down, (data.Flags & 0x10) != 0,
+            data.Extra == Native.Marker, (data.Flags & 0x02) != 0);
+        if (MappingEngine.ShouldIgnore(input)) {
+            diagnostics?.Key(data.Key, data.Scan, data.Flags, data.Extra == Native.Marker, down, "injected-bypass");
+            return Native.CallNextHookEx(hook, code, message, pointer);
+        }
         try {
-            var result = engine.Process(new((int)data.Key, type is 0x100 or 0x104));
+            var result = engine.Process(input);
             if (result.Suppress) {
-                if (Native.Emit(result.Output)) return (IntPtr)1;
+                bool success = Native.Emit(result.Output);
+                diagnostics?.Key(data.Key, data.Scan, data.Flags, false, down, "mapped", result.Output, success);
+                if (success) return (IntPtr)1;
                 Fail("按键输出被系统阻止，已停止映射。管理员窗口可能受权限限制。");
-            }
+            } else diagnostics?.Key(data.Key, data.Scan, data.Flags, false, down, "pass");
         } catch (Exception) { Fail("键盘映射异常，已停止映射。"); }
         return Native.CallNextHookEx(hook, code, message, pointer);
     }

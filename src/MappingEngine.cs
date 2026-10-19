@@ -1,6 +1,6 @@
 namespace KeyboardSwitcher;
 
-public readonly record struct KeyEvent(int Key, bool Down, bool Injected = false);
+public readonly record struct KeyEvent(int Key, bool Down, bool Injected = false, bool OwnOutput = false, bool LowerIntegrity = false);
 public readonly record struct Stroke(int Key, bool Down);
 public sealed record Decision(bool Suppress, IReadOnlyList<Stroke> Output) {
     public static readonly Decision Pass = new(false, Array.Empty<Stroke>());
@@ -19,8 +19,12 @@ public sealed class MappingEngine {
         var output = ReleaseAll(); enabled = value; compatibility = chords; return output;
     }
     public void SeedModifier(int key) { if (Modifiers.Contains(key)) physical.Add(key); }
+    // Bluetooth consumer-control keys can be system-injected. Only our own output
+    // and unrelated injected keys must bypass mapping to avoid feedback loops.
+    public static bool ShouldIgnore(KeyEvent input) => input.OwnOutput || input.LowerIntegrity ||
+        (input.Injected && Array.IndexOf(Media, input.Key) < 0);
     public Decision Process(KeyEvent input) {
-        if (input.Injected) return Decision.Pass;
+        if (ShouldIgnore(input)) return Decision.Pass;
         if (Modifiers.Contains(input.Key)) {
             if (input.Down) physical.Add(input.Key); else physical.Remove(input.Key);
             if (active.Values.Any(p => p.Removed.Contains(input.Key) || (!input.Down && p.Added.Contains(input.Key))))

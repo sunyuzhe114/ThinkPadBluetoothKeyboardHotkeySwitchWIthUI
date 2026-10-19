@@ -13,8 +13,21 @@ internal sealed class TrayApplication : ApplicationContext {
     private string? error;
     private bool busy, closing;
     private readonly RegisteredWaitHandle wake;
+    private readonly F1Diagnostics? diagnostics;
+    private readonly string? diagnosticPath;
+    private readonly System.Windows.Forms.Timer? diagnosticTimer;
 
-    internal TrayApplication(EventWaitHandle showEvent, bool startHidden) {
+    internal TrayApplication(EventWaitHandle showEvent, bool startHidden, string? diagnosticPath = null) {
+        this.diagnosticPath = diagnosticPath;
+        if (diagnosticPath is not null) {
+            diagnostics = new F1Diagnostics();
+            diagnosticTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+            diagnosticTimer.Tick += (_, _) => {
+                WriteDiagnostic();
+                if (diagnostics.Complete) diagnosticTimer.Stop();
+            };
+            diagnosticTimer.Start();
+        }
         _ = form.Handle;
         try { settings = SettingsStore.Load(); } catch (Exception e) { settings = new(false, true); error = "设置读取失败：" + e.Message; }
         menu.Items.Add("打开控制窗口", null, (_, _) => form.Reveal());
@@ -46,7 +59,7 @@ internal sealed class TrayApplication : ApplicationContext {
         if (busy || closing) return;
         busy = true; error = null; Render();
         try {
-            hook?.Dispose(); hook = new KeyboardHook();
+            hook?.Dispose(); hook = new KeyboardHook(diagnostics);
             var current = hook;
             hook.Fault += message => OnUi(() => { if (ReferenceEquals(hook, current)) { error = message; Render(); } });
             await hook.Configure(settings.FunctionMode, settings.Compatibility);
@@ -80,7 +93,14 @@ internal sealed class TrayApplication : ApplicationContext {
         form.UpdateState(settings, registered, busy, error, icon);
     }
     private void Quit() { if (closing) return; closing = true; ExitThread(); }
+    private void WriteDiagnostic(bool stopped = false) {
+        if (diagnostics is null || diagnosticPath is null) return;
+        try { diagnostics.Write(diagnosticPath, SettingsStore.FileName, settings.FunctionMode, settings.Compatibility, error, stopped); }
+        catch (IOException) { diagnosticTimer?.Stop(); }
+        catch (UnauthorizedAccessException) { diagnosticTimer?.Stop(); }
+    }
     protected override void ExitThreadCore() {
+        diagnosticTimer?.Stop(); WriteDiagnostic(true); diagnosticTimer?.Dispose();
         closing = true; wake.Unregister(null); tray.Visible = false;
         hook?.Dispose(); tray.Dispose(); menu.Dispose();
         form.AllowClose = true; form.Close(); form.Dispose();
